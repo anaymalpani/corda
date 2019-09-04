@@ -12,6 +12,7 @@ import net.corda.core.flows.FlowLogic
 import net.corda.core.identity.AbstractParty
 import net.corda.core.internal.concurrent.doneFuture
 import net.corda.core.messaging.DataFeed
+import net.corda.core.node.ServiceHub
 import net.corda.core.node.services.Vault.RelevancyStatus.*
 import net.corda.core.node.services.Vault.StateStatus
 import net.corda.core.node.services.vault.*
@@ -516,6 +517,11 @@ inline fun <reified T : ContractState> VaultService.trackBy(criteria: QueryCrite
 
 inline fun <reified T : ContractState> VaultService.trackBy(criteria: QueryCriteria, paging: PageSpecification, sorting: Sort): DataFeed<Vault.Page<T>, Vault.Update<T>> {
     return _trackBy(criteria, paging, sorting, T::class.java)
+}
+
+/** Gets a linear state by unique identifier. */
+inline fun <reified T : LinearState> getLinearStateById(linearId: UniqueIdentifier, services: ServiceHub): StateAndRef<T>? {
+    return services.vaultService.queryBy<T>(QueryCriteria.LinearStateQueryCriteria(linearId = listOf(linearId))).states.singleOrNull()
 }
 
 class VaultQueryException(description: String, cause: Exception? = null) : FlowException(description, cause) {
