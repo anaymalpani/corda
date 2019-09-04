@@ -27,6 +27,7 @@ import java.time.Duration
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Wrapper over [CordaRPCOps] that handles exceptions when the node or the connection to the node fail.
@@ -67,11 +68,12 @@ class ReconnectingCordaRPCOps private constructor(
             nodeHostAndPorts: List<NetworkHostAndPort>,
             username: String,
             password: String,
+            gracefulReconnect: GracefulReconnect? = null,
             sslConfiguration: ClientRpcSslOptions? = null,
             classLoader: ClassLoader? = null,
             observersPool: ExecutorService? = null
     ) : this(
-            ReconnectingRPCConnection(nodeHostAndPorts, username, password, sslConfiguration, classLoader),
+            ReconnectingRPCConnection(nodeHostAndPorts, username, password, sslConfiguration, classLoader, gracefulReconnect),
             observersPool ?: Executors.newCachedThreadPool(),
             observersPool != null)
 
@@ -129,7 +131,8 @@ class ReconnectingCordaRPCOps private constructor(
             val username: String,
             val password: String,
             val sslConfiguration: ClientRpcSslOptions? = null,
-            val classLoader: ClassLoader?
+            val classLoader: ClassLoader?,
+            val gracefulReconnect: GracefulReconnect? = null
     ) : RPCConnection<CordaRPCOps> {
         private var currentRPCConnection: CordaRPCConnection? = null
 
@@ -138,6 +141,10 @@ class ReconnectingCordaRPCOps private constructor(
         }
 
         private var currentState = CurrentState.UNCONNECTED
+
+        // The current connection index.  For managing reconnection when disconnects
+        // can occur mid-reconnect
+        private val reconnectIdx = AtomicLong(0)
 
         init {
             current
@@ -158,10 +165,15 @@ class ReconnectingCordaRPCOps private constructor(
         @Synchronized
         fun reconnectOnError(e: Throwable) {
             currentState = CurrentState.DIED
+            gracefulReconnect?.onDisconnect?.invoke()
             //TODO - handle error cases
             log.error("Reconnecting to ${this.nodeHostAndPorts} due to error: ${e.message}")
             log.debug("", e)
             connect()
+            do {
+                val currentIdx = reconnectIdx.get()
+                gracefulReconnect?.onReconnect?.invoke()
+            } while (currentIdx != reconnectIdx.get()) // if we reconnected while in the callback, then execute this loop again
         }
 
         @Synchronized
@@ -173,6 +185,7 @@ class ReconnectingCordaRPCOps private constructor(
         }
 
         private tailrec fun establishConnectionWithRetry(retryInterval: Duration = 1.seconds, currentAuthenticationRetries: Int = 0): CordaRPCConnection {
+            reconnectIdx.incrementAndGet()
             var _currentAuthenticationRetries = currentAuthenticationRetries
             log.info("Connecting to: $nodeHostAndPorts")
             try {
