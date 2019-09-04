@@ -520,7 +520,7 @@ inline fun <reified T : ContractState> VaultService.trackBy(criteria: QueryCrite
 }
 
 /** Gets a linear state by unique identifier. */
-inline fun <reified T : LinearState> getLinearStateById(linearId: UniqueIdentifier, services: ServiceHub): StateAndRef<T>? {
+inline fun <reified T : LinearState> VaultService.getLinearStateById(linearId: UniqueIdentifier, services: ServiceHub): StateAndRef<T>? {
     return services.vaultService.queryBy<T>(QueryCriteria.LinearStateQueryCriteria(linearId = listOf(linearId))).states.singleOrNull()
 }
 
